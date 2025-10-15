@@ -1,75 +1,85 @@
-name: Deploy to GitHub Pages (final verified)
+# ==============================================================================
+#                 GitHub Actions Workflow for Deploying to GitHub Pages
+# ==============================================================================
+#
+# 工作流程名稱:
+#   顯示在 GitHub Actions 頁面上的名稱
+name: Deploy to GitHub Pages
 
+# 觸發條件 (Triggers):
+#   - 當有程式碼被推送到 `main` 分支時，此工作流程會自動執行。
+#   - `workflow_dispatch` 允許你手動從 Actions 頁面觸發此工作流程。
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
 
+# 權限設定 (Permissions):
+#   這是部署到 GitHub Pages 所需的標準權限設定。
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
+# 環境設定 (Environment):
+#   設定部署的環境，指向 GitHub Pages。
+#   `url: ${{ steps.deployment.outputs.page_url }}` 會在完成後顯示網站的 URL。
+environment:
+  name: github-pages
+  url: ${{ steps.deployment.outputs.page_url }}
+
+# 工作 (Jobs):
+#   定義工作流程中要執行的任務。
 jobs:
   deploy:
+    # 執行環境:
+    #   使用最新版的 Ubuntu 作為執行環境。
     runs-on: ubuntu-latest
 
+    # 步驟 (Steps):
+    #   定義此工作中要依序執行的步驟。
     steps:
-      # 1️⃣ Checkout
-      - name: Checkout
+      # 步驟 1: 簽出程式碼
+      #   使用官方的 `checkout` action 來取得你的倉庫程式碼。
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Inject Firebase secrets
-      - name: Inject Firebase config
+      # 步驟 2: 從 Secrets 建立 Firebase 設定檔
+      #   這是解決問題的核心步驟。
+      #   它會複製範本檔，並使用 `sed` 指令將範本中的佔位符 (__API_KEY__, etc.)
+      #   替換成你在 GitHub Secrets 中儲存的真實金鑰。
+      - name: Create Firebase Config from Secrets
         run: |
-          sed -i 's|__API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g' ./firebase-config.template.js
-          sed -i 's|__AUTH_DOMAIN__|${{ secrets.FIREBASE_AUTH_DOMAIN }}|g' ./firebase-config.template.js
-          sed -i 's|__PROJECT_ID__|${{ secrets.FIREBASE_PROJECT_ID }}|g' ./firebase-config.template.js
-          sed -i 's|__STORAGE_BUCKET__|${{ secrets.FIREBASE_STORAGE_BUCKET }}|g' ./firebase-config.template.js
-          sed -i 's|__SENDER_ID__|${{ secrets.FIREBASE_SENDER_ID }}|g' ./firebase-config.template.js
-          sed -i 's|__APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g' ./firebase-config.template.js
-          sed -i 's|__MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g' ./firebase-config.template.js
+          echo "🚀 Generating firebase-config.js from template..."
+          cp firebase-config.template.js firebase-config.js
+          
+          sed -i 's|__API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g' firebase-config.js
+          sed -i 's|__AUTH_DOMAIN__|${{ secrets.FIREBASE_AUTH_DOMAIN }}|g' firebase-config.js
+          sed -i 's|__PROJECT_ID__|${{ secrets.FIREBASE_PROJECT_ID }}|g' firebase-config.js
+          sed -i 's|__STORAGE_BUCKET__|${{ secrets.FIREBASE_STORAGE_BUCKET }}|g' firebase-config.js
+          sed -i 's|__SENDER_ID__|${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}|g' firebase-config.js
+          sed -i 's|__APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g' firebase-config.js
+          sed -i 's|__MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g' firebase-config.js
 
-      # 3️⃣ Rename to firebase-config.js
-      - name: Rename firebase config
-        run: mv ./firebase-config.template.js ./firebase-config.js
+          echo "✅ firebase-config.js generated successfully."
 
-      # 4️⃣ Prepare deploy folder
-      - name: Prepare deploy folder
-        run: |
-          mkdir -p dist
-          cp -v index.html firebase-config.js dist/
-          cp -rv assets css js dist/ 2>/dev/null || true
-          echo "✅ dist folder contents:"
-          ls -al dist
+      # 步驟 3: 設定 GitHub Pages
+      #   使用官方的 `configure-pages` action 來設定 Pages 環境。
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
 
-      # 5️⃣ Verify file existence
-      - name: Validate dist folder
-        run: |
-          if [ ! -f "dist/firebase-config.js" ]; then
-            echo "❌ firebase-config.js not found in dist!"
-            exit 1
-          fi
-          echo "✅ firebase-config.js confirmed."
-
-      # 6️⃣ Deploy to GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      # 步驟 4: 上傳部署產物 (Artifact)
+      #   將整個專案目錄（現在已包含生成好的 `firebase-config.js`）打包並上傳。
+      #   `path: '.'` 表示上傳當前目錄下的所有檔案。
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: dist
-          publish_branch: gh-pages
-          # ⛔ 關鍵設定：一定要 false，否則會清空後出錯
-          keep_files: true
-          enable_jekyll: false
-          force_orphan: false
-          exclude_assets: ''
+          path: '.'
 
-      # 7️⃣ Verify online
-      - name: Verify firebase-config.js online
-        run: |
-          echo "🌐 Waiting 30s for Pages propagation..."
-          sleep 30
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://rayhsiaodev.github.io/Investment-Tracker/firebase-config.js)
-          if [ "$STATUS" != "200" ]; then
-            echo "❌ firebase-config.js unreachable (HTTP $STATUS)"
-            exit 1
-          fi
-          echo "✅ firebase-config.js successfully accessible online."
+      # 步驟 5: 部署到 GitHub Pages
+      #   使用官方的 `deploy-pages` action 進行部署。
+      #   這個步驟會自動取得上一步上傳的 artifact 並將其部署到你的網站。
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
