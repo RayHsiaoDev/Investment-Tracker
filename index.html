@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投資記帳簿</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Chart.js 用於繪製圖表 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.292.0/dist/lucide-react.min.js"></script>
+    <script src="./firebase-config.js"></script>
+    <style>
+        /* 自定義樣式 */
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f0f2f5;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        /* Chart.js 響應式容器 */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <!-- 頁首 -->
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">投資記帳簿</h1>
+                <p class="text-gray-500 mt-1">即時追蹤您的投資組合表現</p>
+            </div>
+            <button id="add-transaction-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition duration-200">
+                <span>新增交易</span>
+            </button>
+        </header>
+
+        <!-- 讀取中提示 -->
+        <div id="loading" class="text-center py-12">
+            <p class="text-gray-500">正在從 Firestore 讀取資料...</p>
+        </div>
+
+        <main id="main-content" class="hidden">
+            <!-- 儀表板 -->
+            <section id="dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="card p-6 flex flex-col justify-between">
+                    <h3 class="text-gray-500 font-medium">總資產價值</h3>
+                    <p id="total-value" class="text-3xl font-bold text-gray-900 mt-2">$0.00</p>
+                </div>
+                <div class="card p-6 flex flex-col justify-between">
+                    <h3 class="text-gray-500 font-medium">總投入成本</h3>
+                    <p id="total-cost" class="text-3xl font-bold text-gray-900 mt-2">$0.00</p>
+                </div>
+                <div class="card p-6 flex flex-col justify-between">
+                    <h3 class="text-gray-500 font-medium">總損益</h3>
+                    <p id="total-pl" class="text-3xl font-bold text-gray-900 mt-2">$0.00</p>
+                </div>
+                <div class="card p-6 flex flex-col justify-between">
+                    <h3 class="text-gray-500 font-medium">總回報率</h3>
+                    <p id="total-return" class="text-3xl font-bold text-gray-900 mt-2">0.00%</p>
+                </div>
+            </section>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- 投資組合清單 -->
+                <section class="lg:col-span-2">
+                    <div class="card">
+                        <div class="p-6 border-b">
+                            <h2 class="text-xl font-semibold">持股清單</h2>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50 text-xs font-semibold uppercase text-gray-600">
+                                    <tr>
+                                        <th class="p-4">資產代碼</th>
+                                        <th class="p-4">持有股數</th>
+                                        <th class="p-4">平均成本</th>
+                                        <th class="p-4">目前總值</th>
+                                        <th class="p-4">未實現損益</th>
+                                        <th class="p-4">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="investments-table" class="divide-y">
+                                    <!-- 投資項目將會動態插入此處 -->
+                                </tbody>
+                            </table>
+                             <div id="empty-state" class="text-center p-12 hidden">
+                                <p class="text-gray-500">尚未有任何投資紀錄。</p>
+                                <p class="text-gray-400 text-sm mt-2">點擊右上角的「新增交易」開始吧！</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 資產分佈 -->
+                <section>
+                    <div class="card p-6">
+                        <h2 class="text-xl font-semibold mb-4">資產分佈</h2>
+                        <div class="chart-container">
+                            <canvas id="asset-allocation-chart"></canvas>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- 新增交易 Modal -->
+    <div id="transaction-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="card w-full max-w-md mx-auto transform transition-all" id="modal-content">
+            <form id="transaction-form" class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">新增交易紀錄</h2>
+                    <button type="button" id="close-modal-btn" class="text-gray-400 hover:text-gray-600">&times;</button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label for="ticker" class="block text-sm font-medium text-gray-700">資產代碼 (Ticker)</label>
+                        <input type="text" id="ticker" name="ticker" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="例如：AAPL, TSLA, BTC">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                           <label for="type" class="block text-sm font-medium text-gray-700">交易類型</label>
+                           <select id="type" name="type" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                               <option value="buy">買入 (Buy)</option>
+                               <option value="sell">賣出 (Sell)</option>
+                           </select>
+                        </div>
+                        <div>
+                            <label for="date" class="block text-sm font-medium text-gray-700">交易日期</label>
+                            <input type="date" id="date" name="date" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                         <div>
+                            <label for="shares" class="block text-sm font-medium text-gray-700">股數/數量</label>
+                            <input type="number" step="any" id="shares" name="shares" required min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="例如：10.5">
+                        </div>
+                        <div>
+                            <label for="price" class="block text-sm font-medium text-gray-700">成交價格</label>
+                            <input type="number" step="any" id="price" name="price" required min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="例如：150.25">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 flex justify-end">
+                    <button type="submit" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition duration-200">
+                        儲存交易
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- JavaScript 程式碼 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore,
+            collection,
+            query,
+            where,
+            onSnapshot,
+            addDoc,
+            doc,
+            getDocs,
+            writeBatch, 
+            serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- DOM 元素 ---
+        const loadingEl = document.getElementById('loading');
+        const mainContentEl = document.getElementById('main-content');
+        const modal = document.getElementById('transaction-modal');
+        const addTransactionBtn = document.getElementById('add-transaction-btn');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const transactionForm = document.getElementById('transaction-form');
+        const investmentsTable = document.getElementById('investments-table');
+        const emptyStateEl = document.getElementById('empty-state');
+        
+        const totalValueEl = document.getElementById('total-value');
+        const totalCostEl = document.getElementById('total-cost');
+        const totalPlEl = document.getElementById('total-pl');
+        const totalReturnEl = document.getElementById('total-return');
+
+        // --- Firebase 初始化 ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-investment-tracker';
+
+        let firebaseConfig = {};
+        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        if (rawConfig) {
+            try {
+                firebaseConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+            } catch (error) {
+                console.error('Failed to parse __firebase_config:', error);
+            }
+        }
+
+        const requiredFirebaseKeys = ['apiKey', 'authDomain', 'projectId'];
+        const missingFirebaseKeys = requiredFirebaseKeys.filter((key) => !firebaseConfig[key]);
+
+        function renderFirebaseSetupInstructions(missingKeys) {
+            const missingList = missingKeys.map((key) => `<code>${key}</code>`).join('、');
+            loadingEl.innerHTML = `
+                <div class="max-w-2xl mx-auto bg-white shadow rounded-xl p-6 space-y-4 text-left">
+                    <h2 class="text-2xl font-semibold text-gray-900">尚未完成 Firebase 設定</h2>
+                    <p class="text-gray-600">目前缺少 ${missingList} 等必要設定，請依下列步驟自行建立 Firebase 專案並填入設定：</p>
+                    <ol class="list-decimal list-inside space-y-2 text-gray-600">
+                        <li>到 <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" class="text-indigo-600 underline">Firebase 控制台</a> 建立或選取專案。</li>
+                        <li>在「專案設定 &gt; 一般」中新增 Web App 並啟用 Firestore。</li>
+                        <li>複製 Firebase SDK 產生的設定（apiKey、authDomain、projectId、storageBucket…）。</li>
+                    </ol>
+                    <p class="text-gray-600">在載入本頁面的腳本之前加入以下程式碼，或在佈署平台（如 GitHub Pages）上注入相同的全域變數：</p>
+                    <pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto text-sm"><code>window.__firebase_config = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};</code></pre>
+                    <p class="text-sm text-gray-500">設定檔由你自行保管並部署即可，無需提供給任何其他人。</p>
+                </div>
+            `;
+        }
+
+        if (missingFirebaseKeys.length > 0) {
+            renderFirebaseSetupInstructions(missingFirebaseKeys);
+            console.warn('Missing Firebase configuration keys:', missingFirebaseKeys);
+            throw new Error('Missing Firebase configuration');
+        }
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let userId = null;
+        let investmentsUnsubscribe = null;
+        let assetAllocationChart = null;
+        
+        // --- Modal 控制 ---
+        const openModal = () => {
+            transactionForm.reset();
+            document.getElementById('date').valueAsDate = new Date();
+            modal.classList.remove('hidden');
+        };
+        const closeModal = () => modal.classList.add('hidden');
+        
+        addTransactionBtn.addEventListener('click', openModal);
+        closeModalBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        // --- 核心邏輯 ---
+        
+        // 監聽認證狀態
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                if (investmentsUnsubscribe) investmentsUnsubscribe(); // 取消先前的監聽
+                listenToInvestments();
+            } else {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                         await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                         await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Authentication Error:", error);
+                    loadingEl.textContent = '認證失敗，請重新整理頁面。';
+                }
+            }
+        });
+
+        // 監聽投資數據變化
+        function listenToInvestments() {
+            if (!userId) return;
+            const q = query(collection(db, `artifacts/${appId}/users/${userId}/investments`));
+            
+            investmentsUnsubscribe = onSnapshot(q, async (querySnapshot) => {
+                loadingEl.classList.add('hidden');
+                mainContentEl.classList.remove('hidden');
+
+                const investments = [];
+                for (const doc of querySnapshot.docs) {
+                    const investmentData = doc.data();
+                    const transactionsSnapshot = await getDocs(collection(doc.ref, 'transactions'));
+                    const transactions = transactionsSnapshot.docs.map(tDoc => ({...tDoc.data(), id: tDoc.id }));
+                    
+                    const metrics = calculateMetrics(transactions);
+                    
+                    // 為了計算總價值，我們需要一個即時價格。此處用最後一筆交易價模擬。
+                    // 專業應用會接股市 API。
+                    const lastPrice = transactions.length > 0 ? transactions[transactions.length - 1].price : 0;
+                    const currentValue = metrics.totalShares * lastPrice;
+                    const unrealizedPL = currentValue - metrics.totalCost;
+
+                    investments.push({
+                        id: doc.id,
+                        ticker: investmentData.ticker,
+                        ...metrics,
+                        currentValue,
+                        unrealizedPL
+                    });
+                }
+                
+                renderUI(investments);
+
+            }, (error) => {
+                console.error("Error fetching investments: ", error);
+                loadingEl.textContent = '讀取資料時發生錯誤。';
+            });
+        }
+        
+        // 計算單一資產的指標
+        function calculateMetrics(transactions) {
+            let totalShares = 0;
+            let totalCost = 0;
+            
+            transactions.sort((a, b) => a.date.toMillis() - b.date.toMillis());
+
+            transactions.forEach(tx => {
+                const shares = parseFloat(tx.shares);
+                const cost = parseFloat(tx.shares) * parseFloat(tx.price);
+
+                if (tx.type === 'buy') {
+                    totalShares += shares;
+                    totalCost += cost;
+                } else { // sell
+                    totalShares -= shares;
+                    // 賣出時，成本按平均成本減少
+                    const avgCostBeforeSell = totalCost / (totalShares + shares);
+                    totalCost -= shares * avgCostBeforeSell;
+                }
+            });
+             // 避免除以零
+            const averageCost = totalShares > 0 ? totalCost / totalShares : 0;
+            
+            return { totalShares, totalCost, averageCost };
+        }
+
+        // 處理表單提交
+        transactionForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!userId) return;
+
+            const formData = new FormData(transactionForm);
+            const ticker = formData.get('ticker').toUpperCase().trim();
+
+            const newTransaction = {
+                type: formData.get('type'),
+                date: new Date(formData.get('date')),
+                shares: parseFloat(formData.get('shares')),
+                price: parseFloat(formData.get('price')),
+                createdAt: serverTimestamp()
+            };
+
+            // 尋找是否已存在此資產
+            const investmentsRef = collection(db, `artifacts/${appId}/users/${userId}/investments`);
+            const q = query(collection(db, `artifacts/${appId}/users/${userId}/investments`), where("ticker", "==", ticker));
+            const querySnapshot = await getDocs(q);
+
+            let investmentDocRef;
+            if (querySnapshot.empty) {
+                // 如果是新資產，建立一個新的 document
+                investmentDocRef = await addDoc(investmentsRef, { ticker, createdAt: serverTimestamp() });
+            } else {
+                // 如果已存在，使用現有的 document
+                investmentDocRef = querySnapshot.docs[0].ref;
+            }
+
+            // 在資產 document 下新增一筆交易紀錄
+            await addDoc(collection(investmentDocRef, 'transactions'), newTransaction);
+            
+            closeModal();
+        });
+        
+        // 刪除投資項目
+        async function deleteInvestment(investmentId) {
+             if (!userId || !confirm('您確定要刪除此資產及其所有交易紀錄嗎？此操作無法復原。')) return;
+
+            try {
+                const investmentDocRef = doc(db, `artifacts/${appId}/users/${userId}/investments`, investmentId);
+                const transactionsSnapshot = await getDocs(collection(investmentDocRef, 'transactions'));
+                
+                const batch = writeBatch(db);
+                
+                // 刪除所有交易子文件
+                transactionsSnapshot.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                
+                // 刪除主資產文件
+                batch.delete(investmentDocRef);
+                
+                await batch.commit();
+                console.log(`Investment ${investmentId} and its transactions deleted.`);
+            } catch (error) {
+                console.error("Error deleting investment: ", error);
+                alert("刪除失敗，請稍後再試。");
+            }
+        }
+
+
+        // --- UI 渲染 ---
+        function renderUI(investments) {
+            renderInvestmentList(investments);
+            renderDashboard(investments);
+            renderChart(investments);
+        }
+
+        function renderInvestmentList(investments) {
+            investmentsTable.innerHTML = ''; // 清空表格
+            if (investments.length === 0) {
+                 emptyStateEl.classList.remove('hidden');
+                 return;
+            }
+            
+            emptyStateEl.classList.add('hidden');
+
+            investments.forEach(inv => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                
+                const plColor = inv.unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600';
+
+                tr.innerHTML = `
+                    <td class="p-4 font-bold text-indigo-600">${inv.ticker}</td>
+                    <td class="p-4">${inv.totalShares.toFixed(4)}</td>
+                    <td class="p-4">$${inv.averageCost.toFixed(2)}</td>
+                    <td class="p-4">$${inv.currentValue.toFixed(2)}</td>
+                    <td class="p-4 font-semibold ${plColor}">${inv.unrealizedPL.toFixed(2)}</td>
+                    <td class="p-4">
+                        <button data-id="${inv.id}" class="delete-btn text-red-500 hover:text-red-700">刪除</button>
+                    </td>
+                `;
+                investmentsTable.appendChild(tr);
+            });
+            
+            // 綁定刪除按鈕事件
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => deleteInvestment(btn.dataset.id));
+            });
+        }
+        
+        function renderDashboard(investments) {
+            const summary = investments.reduce((acc, inv) => {
+                acc.totalValue += inv.currentValue;
+                acc.totalCost += inv.totalCost;
+                return acc;
+            }, { totalValue: 0, totalCost: 0 });
+
+            const totalPL = summary.totalValue - summary.totalCost;
+            const totalReturn = summary.totalCost > 0 ? (totalPL / summary.totalCost) * 100 : 0;
+            const plColor = totalPL >= 0 ? 'text-green-600' : 'text-red-600';
+            
+            totalValueEl.textContent = `$${summary.totalValue.toFixed(2)}`;
+            totalCostEl.textContent = `$${summary.totalCost.toFixed(2)}`;
+            totalPlEl.textContent = `$${totalPL.toFixed(2)}`;
+            totalReturnEl.textContent = `${totalReturn.toFixed(2)}%`;
+
+            totalPlEl.className = `text-3xl font-bold mt-2 ${plColor}`;
+            totalReturnEl.className = `text-3xl font-bold mt-2 ${plColor}`;
+        }
+        
+        function renderChart(investments) {
+            const ctx = document.getElementById('asset-allocation-chart').getContext('2d');
+            
+            if (assetAllocationChart) {
+                assetAllocationChart.destroy();
+            }
+
+            if (investments.length === 0) {
+                return;
+            }
+
+            const totalPortfolioValue = investments.reduce((sum, inv) => sum + inv.currentValue, 0);
+
+            const labels = investments.map(inv => inv.ticker);
+            const data = investments.map(inv => (inv.currentValue / totalPortfolioValue) * 100);
+
+            const backgroundColors = [
+                '#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#3B82F6',
+                '#8B5CF6', '#D946EF', '#EC4899', '#64748B', '#14B8A6'
+            ];
+
+            assetAllocationChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '資產佔比',
+                        data: data,
+                        backgroundColor: backgroundColors.slice(0, labels.length),
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += context.parsed.toFixed(2) + '%';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>
