@@ -1,4 +1,5 @@
 name: Deploy to GitHub Pages
+
 on:
   push:
     branches:
@@ -11,10 +12,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # 1️⃣ 取出原始碼
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ✅ 注入 Firebase Secrets
+      # 2️⃣ 將 Secrets 寫入 firebase-config.template.js
       - name: Inject Firebase config
         run: |
           sed -i 's|__API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g' ./firebase-config.template.js
@@ -25,18 +27,24 @@ jobs:
           sed -i 's|__APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g' ./firebase-config.template.js
           sed -i 's|__MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g' ./firebase-config.template.js
 
-      # ✅ 改名成實際用的檔案
+      # 3️⃣ 將模板改名為實際使用的檔案
       - name: Rename firebase config
         run: mv ./firebase-config.template.js ./firebase-config.js
 
-      # ✅ 確保要部署的內容包含這個檔案
+      # 4️⃣ 建立要部署的資料夾，確保 firebase-config.js 一定被包含
       - name: Prepare deploy folder
         run: |
           mkdir -p dist
-          cp -r index.html firebase-config.js ./dist/
+          cp index.html firebase-config.js ./dist/
           cp -r assets ./dist/ 2>/dev/null || true
+          cp -r css ./dist/ 2>/dev/null || true
+          cp -r js ./dist/ 2>/dev/null || true
 
-      # ✅ 部署到 GitHub Pages
+      # 5️⃣ 驗證（方便除錯，可選）
+      - name: Verify config content
+        run: cat ./firebase-config.js
+
+      # 6️⃣ 部署到 GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
