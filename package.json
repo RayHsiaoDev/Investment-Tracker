@@ -1,0 +1,9 @@
+{
+  "name": "investment-tracker",
+  "version": "1.0.0",
+  "description": "Static investment tracker dashboard",
+  "scripts": {
+    "test": "node tests/firebaseSetupSmoke.test.js"
+  },
+  "license": "MIT"
+}
