@@ -2,53 +2,53 @@
 #                 GitHub Actions Workflow for Deploying to GitHub Pages
 # ==============================================================================
 #
-# 工作流程名稱:
-#   顯示在 GitHub Actions 頁面上的名稱
+# Workflow Name:
+#   Name displayed on the GitHub Actions page
 name: Deploy to GitHub Pages
 
-# 觸發條件 (Triggers):
-#   - 當有程式碼被推送到 `main` 分支時，此工作流程會自動執行。
-#   - `workflow_dispatch` 允許你手動從 Actions 頁面觸發此工作流程。
+# Triggers:
+#   - Runs automatically on pushes to the `main` branch.
+#   - `workflow_dispatch` allows manual triggering from the Actions page.
 on:
   push:
     branches:
       - main
   workflow_dispatch:
 
-# 權限設定 (Permissions):
-#   這是部署到 GitHub Pages 所需的標準權限設定。
+# Permissions:
+#   Standard permissions required for deploying to GitHub Pages.
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# 環境設定 (Environment):
-#   設定部署的環境，指向 GitHub Pages。
-#   `url: ${{ steps.deployment.outputs.page_url }}` 會在完成後顯示網站的 URL。
-environment:
-  name: github-pages
-  url: ${{ steps.deployment.outputs.page_url }}
-
-# 工作 (Jobs):
-#   定義工作流程中要執行的任務。
+# Jobs:
+#   Defines the tasks to be executed in the workflow.
 jobs:
   deploy:
-    # 執行環境:
-    #   使用最新版的 Ubuntu 作為執行環境。
+    # Environment Configuration:
+    #   Specifies the deployment environment, pointing to GitHub Pages.
+    #   The `url` will display the live site URL upon completion.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    # Runner Environment:
+    #   Uses the latest version of Ubuntu as the execution environment.
     runs-on: ubuntu-latest
 
-    # 步驟 (Steps):
-    #   定義此工作中要依序執行的步驟。
+    # Steps:
+    #   Defines the sequential steps to be executed in this job.
     steps:
-      # 步驟 1: 簽出程式碼
-      #   使用官方的 `checkout` action 來取得你的倉庫程式碼。
+      # Step 1: Checkout Code
+      #   Uses the official `checkout` action to get your repository code.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 步驟 2: 從 Secrets 建立 Firebase 設定檔
-      #   這是解決問題的核心步驟。
-      #   它會複製範本檔，並使用 `sed` 指令將範本中的佔位符 (__API_KEY__, etc.)
-      #   替換成你在 GitHub Secrets 中儲存的真實金鑰。
+      # Step 2: Create Firebase Config from Secrets
+      #   This is the core step to fix the original problem.
+      #   It copies the template and uses `sed` to replace placeholders
+      #   with the actual keys stored in GitHub Secrets.
       - name: Create Firebase Config from Secrets
         run: |
           echo "🚀 Generating firebase-config.js from template..."
@@ -64,22 +64,22 @@ jobs:
 
           echo "✅ firebase-config.js generated successfully."
 
-      # 步驟 3: 設定 GitHub Pages
-      #   使用官方的 `configure-pages` action 來設定 Pages 環境。
+      # Step 3: Setup GitHub Pages
+      #   Uses the official `configure-pages` action to set up the Pages environment.
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
-      # 步驟 4: 上傳部署產物 (Artifact)
-      #   將整個專案目錄（現在已包含生成好的 `firebase-config.js`）打包並上傳。
-      #   `path: '.'` 表示上傳當前目錄下的所有檔案。
+      # Step 4: Upload Deployment Artifact
+      #   Packages and uploads the entire project directory (which now includes
+      #   the generated `firebase-config.js`). `path: '.'` means the current directory.
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
 
-      # 步驟 5: 部署到 GitHub Pages
-      #   使用官方的 `deploy-pages` action 進行部署。
-      #   這個步驟會自動取得上一步上傳的 artifact 並將其部署到你的網站。
+      # Step 5: Deploy to GitHub Pages
+      #   Uses the official `deploy-pages` action. This step automatically
+      #   retrieves the artifact from the previous step and deploys it.
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
