@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages (with Firebase check)
 
 on:
   push:
@@ -12,11 +12,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout
+      # 1️⃣ 取出程式碼
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2️⃣ Replace placeholders with Firebase secrets
+      # 2️⃣ 替換 Firebase config placeholder
       - name: Inject Firebase config
         run: |
           sed -i 's|__API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g' ./firebase-config.template.js
@@ -27,27 +27,66 @@ jobs:
           sed -i 's|__APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g' ./firebase-config.template.js
           sed -i 's|__MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g' ./firebase-config.template.js
 
-      # 3️⃣ Rename output file
+      # 3️⃣ 改名成正式檔案
       - name: Rename firebase config
         run: mv ./firebase-config.template.js ./firebase-config.js
 
-      # 4️⃣ Prepare deploy folder
+      # 4️⃣ 驗證替換結果（log 會被 *** 遮罩）
+      - name: Verify config injection
+        run: |
+          echo "🔍 Checking firebase-config.js content..."
+          if grep -q "__API_KEY__" firebase-config.js; then
+            echo "❌ Secrets injection failed! Placeholder still found."
+            exit 1
+          fi
+          echo "✅ Secrets replaced successfully."
+
+      # 5️⃣ 建立 dist 並複製檔案
       - name: Prepare deploy folder
         run: |
-          mkdir -p dist
-          cp index.html firebase-config.js ./dist/
-          cp -r assets ./dist/ 2>/dev/null || true
-          cp -r css ./dist/ 2>/dev/null || true
-          cp -r js ./dist/ 2>/dev/null || true
+          mkdir dist
+          cp -v index.html firebase-config.js dist/
+          if [ -d "assets" ]; then cp -r assets dist/; fi
+          if [ -d "css" ]; then cp -r css dist/; fi
+          if [ -d "js" ]; then cp -r js dist/; fi
+          echo "✅ dist folder contents:"
+          ls -R dist
 
-      # 5️⃣ Verify the file
-      - name: Verify config content
-        run: cat ./dist/firebase-config.js
+      # 6️⃣ 自動驗證 firebase-config.js 是否成功生成
+      - name: Validate firebase-config.js in dist
+        run: |
+          if [ ! -f "dist/firebase-config.js" ]; then
+            echo "❌ firebase-config.js not found in dist!"
+            exit 1
+          fi
 
-      # 6️⃣ Deploy ONLY dist
+          echo "🔍 Checking for valid apiKey..."
+          if grep -q "__API_KEY__" dist/firebase-config.js; then
+            echo "❌ firebase-config.js still contains placeholders!"
+            exit 1
+          fi
+
+          echo "✅ firebase-config.js found and valid."
+
+      # 7️⃣ 部署到 GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
           publish_dir: ./dist
+          publish_branch: gh-pages
+          enable_jekyll: false
+
+      # 8️⃣ 自動檢查線上檔案是否能被訪問
+      - name: Verify file deployed on GitHub Pages
+        run: |
+          echo "🌐 Checking deployed firebase-config.js on Pages..."
+          sleep 20  # 等待部署同步
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://rayhsiaodev.github.io/Investment-Tracker/firebase-config.js)
+
+          if [ "$RESPONSE" != "200" ]; then
+            echo "❌ firebase-config.js not reachable on GitHub Pages (HTTP $RESPONSE)"
+            exit 1
+          fi
+
+          echo "✅ firebase-config.js successfully deployed to GitHub Pages."
