@@ -16,16 +16,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Replace Firebase config placeholders
+      - name: Inject Firebase config
         run: |
-          cp firebase-config.template.js firebase-config.js
-          sed -i "s|__API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g" firebase-config.js
-          sed -i "s|__AUTH_DOMAIN__|${{ secrets.FIREBASE_AUTH_DOMAIN }}|g" firebase-config.js
-          sed -i "s|__PROJECT_ID__|${{ secrets.FIREBASE_PROJECT_ID }}|g" firebase-config.js
-          sed -i "s|__STORAGE_BUCKET__|${{ secrets.FIREBASE_STORAGE_BUCKET }}|g" firebase-config.js
-          sed -i "s|__SENDER_ID__|${{ secrets.FIREBASE_SENDER_ID }}|g" firebase-config.js
-          sed -i "s|__APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g" firebase-config.js
-          sed -i "s|__MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g" firebase-config.js
+          sed -i 's|__API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g' ./firebase-config.template.js
+          sed -i 's|__AUTH_DOMAIN__|${{ secrets.FIREBASE_AUTH_DOMAIN }}|g' ./firebase-config.template.js
+          sed -i 's|__PROJECT_ID__|${{ secrets.FIREBASE_PROJECT_ID }}|g' ./firebase-config.template.js
+          sed -i 's|__STORAGE_BUCKET__|${{ secrets.FIREBASE_STORAGE_BUCKET }}|g' ./firebase-config.template.js
+          sed -i 's|__SENDER_ID__|${{ secrets.FIREBASE_SENDER_ID }}|g' ./firebase-config.template.js
+          sed -i 's|__APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g' ./firebase-config.template.js
+          sed -i 's|__MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g' ./firebase-config.template.js
+
+      - name: Rename config
+        run: mv ./firebase-config.template.js ./firebase-config.js
+
+      - name: Verify config content
+        run: cat ./firebase-config.js
 
       - name: Create dist folder for Pages
         run: |
