@@ -181,11 +181,12 @@
             onAuthStateChanged 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
-            getFirestore, 
-            collection, 
-            query, 
-            onSnapshot, 
-            addDoc, 
+            getFirestore,
+            collection,
+            query,
+            where,
+            onSnapshot,
+            addDoc,
             doc,
             getDocs,
             writeBatch, 
@@ -209,7 +210,51 @@
 
         // --- Firebase 初始化 ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-investment-tracker';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        let firebaseConfig = {};
+        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        if (rawConfig) {
+            try {
+                firebaseConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+            } catch (error) {
+                console.error('Failed to parse __firebase_config:', error);
+            }
+        }
+
+        const requiredFirebaseKeys = ['apiKey', 'authDomain', 'projectId'];
+        const missingFirebaseKeys = requiredFirebaseKeys.filter((key) => !firebaseConfig[key]);
+
+        function renderFirebaseSetupInstructions(missingKeys) {
+            const missingList = missingKeys.map((key) => `<code>${key}</code>`).join('、');
+            loadingEl.innerHTML = `
+                <div class="max-w-2xl mx-auto bg-white shadow rounded-xl p-6 space-y-4 text-left">
+                    <h2 class="text-2xl font-semibold text-gray-900">尚未完成 Firebase 設定</h2>
+                    <p class="text-gray-600">目前缺少 ${missingList} 等必要設定，請依下列步驟自行建立 Firebase 專案並填入設定：</p>
+                    <ol class="list-decimal list-inside space-y-2 text-gray-600">
+                        <li>到 <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" class="text-indigo-600 underline">Firebase 控制台</a> 建立或選取專案。</li>
+                        <li>在「專案設定 &gt; 一般」中新增 Web App 並啟用 Firestore。</li>
+                        <li>複製 Firebase SDK 產生的設定（apiKey、authDomain、projectId、storageBucket…）。</li>
+                    </ol>
+                    <p class="text-gray-600">在載入本頁面的腳本之前加入以下程式碼，或在佈署平台（如 GitHub Pages）上注入相同的全域變數：</p>
+                    <pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto text-sm"><code>window.__firebase_config = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};</code></pre>
+                    <p class="text-sm text-gray-500">設定檔由你自行保管並部署即可，無需提供給任何其他人。</p>
+                </div>
+            `;
+        }
+
+        if (missingFirebaseKeys.length > 0) {
+            renderFirebaseSetupInstructions(missingFirebaseKeys);
+            console.warn('Missing Firebase configuration keys:', missingFirebaseKeys);
+            throw new Error('Missing Firebase configuration');
+        }
+
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
