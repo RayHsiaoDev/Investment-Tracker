@@ -4,8 +4,9 @@ on:
   push:
     branches:
       - main  # 預設主分支
-      - work  # 專案預設分支，確保推送後自動部署
-  workflow_dispatch:
+  
+permissions:
+  contents: write
 
 jobs:
   build-deploy:
